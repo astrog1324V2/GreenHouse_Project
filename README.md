@@ -27,6 +27,10 @@ Local greenhouse monitoring stack for two ESP32 nodes:
 
 Read [docs/pi-setup.md](docs/pi-setup.md) for the full setup checklist and [docs/windows-share-setup.md](docs/windows-share-setup.md) for the weekly SMB archive target.
 
+## Full project walkthrough
+
+If you want the full project in order from hardware build to Pi deployment, read [docs/full-setup-guide.md](docs/full-setup-guide.md).
+
 ## Test suite
 
 Run:
