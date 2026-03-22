@@ -14,7 +14,10 @@ class SensorSuite:
             sda=Pin(config.I2C_SDA_PIN),
             freq=100000,
         )
-        self.light_sensor = BH1750(self.i2c, config.BH1750_ADDR)
+        self.light_sensor = None
+
+        if getattr(config, "BH1750_ENABLED", True):
+            self.light_sensor = BH1750(self.i2c, config.BH1750_ADDR)
 
     def read_all(self):
         values = {
@@ -31,9 +34,10 @@ class SensorSuite:
         except Exception as exc:
             values["errors"].append("dht:%s" % exc)
 
-        try:
-            values["light_lux"] = self.light_sensor.read_lux()
-        except Exception as exc:
-            values["errors"].append("bh1750:%s" % exc)
+        if self.light_sensor is not None:
+            try:
+                values["light_lux"] = self.light_sensor.read_lux()
+            except Exception as exc:
+                values["errors"].append("bh1750:%s" % exc)
 
         return values

@@ -25,8 +25,11 @@ Copy these to the ESP32:
 
 - `boards/greenhouse/app_config.py`
 - `boards/outdoor/app_config.py`
+- `boards/test_dht22/app_config.py`
 
 Both example configs need your WiFi credentials and server URL filled in before upload.
+
+`test_dht22` is the DHT22-only test board profile. It disables the BH1750 and OLED so you can run `range_test` with just the DHT22 connected.
 
 ## Run modes
 
