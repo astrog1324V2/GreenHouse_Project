@@ -21,7 +21,7 @@ Local greenhouse monitoring stack for two ESP32 nodes:
 1. Create a virtual environment.
 2. Install dependencies with `python -m pip install -r requirements.txt`.
 3. Start the temporary test server with `python scripts/run_dev_server.py`.
-4. Point both ESP32 nodes at `http://<your-pc-ip>:8000/api/v1/readings`.
+4. Set `TEMP_WINDOWS_SERVER_URL = "http://<your-pc-ip>:8000/api/v1/readings"` in each ESP32 config and use `RUN_MODE = "component_test"` while bench-testing components.
 
 ## Raspberry Pi deployment
 

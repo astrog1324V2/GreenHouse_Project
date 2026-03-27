@@ -26,14 +26,20 @@ Copy these to the ESP32:
 - `boards/greenhouse/app_config.py`
 - `boards/outdoor/app_config.py`
 - `boards/test_dht22/app_config.py`
+- `boards/portable_demo/app_config.py`
 
 Both example configs need your WiFi credentials and server URL filled in before upload.
 
 `test_dht22` is the DHT22-only test board profile. It disables the BH1750 and OLED so you can run `range_test` with just the DHT22 connected.
+`portable_demo` is the self-contained OLED demo profile. It reads sensors and updates the screen without WiFi or server uploads, which makes it suitable for a battery-bank-powered walkthrough.
 
 ## Run modes
 
-- `summer`: upload every 60 seconds
-- `range_test`: upload every 10 seconds
+- `summer`: upload every 60 seconds to `SERVER_URL`
+- `range_test`: upload every 10 seconds to `SERVER_URL`
+- `component_test`: upload every 10 seconds to `TEMP_WINDOWS_SERVER_URL` when set, otherwise `SERVER_URL`
+- `display_only`: refresh the OLED locally without WiFi or HTTP uploads
 
 Switch modes by editing `RUN_MODE` in `app_config.py`.
+For `component_test`, point `TEMP_WINDOWS_SERVER_URL` at the temporary Windows server.
+For a portable standalone build, use `UPLOAD_ENABLED = False` and `RUN_MODE = "display_only"`.

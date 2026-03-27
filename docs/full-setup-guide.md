@@ -86,14 +86,16 @@ What to change:
 - `WIFI_SSID`
 - `WIFI_PASSWORD`
 - `SERVER_URL`
+- `TEMP_WINDOWS_SERVER_URL`
 - `RUN_MODE`
 
 Use:
 
+- `RUN_MODE = "component_test"` for temporary Windows server component testing
 - `RUN_MODE = "range_test"` for signal testing
 - `RUN_MODE = "summer"` for normal 1-minute uploads
 
-For the temporary test server, `SERVER_URL` should point to your main Windows PC.
+For the temporary Windows test server, `TEMP_WINDOWS_SERVER_URL` should point to your main Windows PC.
 
 ## Step 6: Upload the MicroPython files to each ESP32
 
@@ -112,9 +114,25 @@ Goal for this step:
 - greenhouse board updates the OLED
 - both boards attempt WiFi and HTTP upload
 
-## Step 7: Run range tests before final installation
+## Step 7: Test components on the temporary Windows server
 
-Put both boards in `range_test` mode first.
+Put both boards in `component_test` mode first.
+
+Test process:
+
+- keep the temporary Windows test server running
+- verify each sensor reports values before moving it to the final location
+- confirm the greenhouse OLED updates while uploads are being posted
+- fix wiring or sensor issues before doing WiFi range checks
+
+Goal for this step:
+
+- confirm each board can boot, read sensors, and post to the temporary Windows server
+- catch wiring or component failures before longer range testing
+
+## Step 8: Run range tests before final installation
+
+After the component checks pass, switch both boards to `range_test`.
 
 Test process:
 
@@ -129,7 +147,7 @@ Goal for this step:
 - confirm reliable WiFi at the outdoor benchmark location
 - decide whether router placement or an access point/extender is needed before final mounting
 
-## Step 8: Switch both ESP32 boards to summer mode
+## Step 9: Switch both ESP32 boards to summer mode
 
 Once range testing looks stable, change both board configs to:
 
@@ -143,7 +161,7 @@ Goal for this step:
 
 - move from fast test uploads to the real summer schedule
 
-## Step 9: Set up the Raspberry Pi Zero 2 W
+## Step 10: Set up the Raspberry Pi Zero 2 W
 
 After the ESP32 boards work with the temporary Windows server, move the backend to the Pi.
 
@@ -167,7 +185,7 @@ Goal for this step:
 - the Pi stores the current week of data
 - the Pi is ready to archive to the second Windows PC every week
 
-## Step 10: Move the ESP32 server target from the main PC to the Pi
+## Step 11: Move the ESP32 server target from the main PC to the Pi
 
 Once the Pi server is running correctly, update both ESP32 config files again.
 
@@ -182,7 +200,7 @@ Goal for this step:
 
 - both ESP32 nodes now send to the Pi instead of the temporary PC server
 
-## Step 11: Test the weekly archive flow
+## Step 12: Test the weekly archive flow
 
 Before leaving the system unattended, manually test the archive process.
 
@@ -198,7 +216,7 @@ Goal for this step:
 - Pi data is purged only after a successful copy
 - the web UI starts repopulating as new readings arrive
 
-## Step 12: Final assembly and deployment
+## Step 13: Final assembly and deployment
 
 After the firmware, server, WiFi, and archive flow all work, move the hardware into the printed enclosures.
 
@@ -216,7 +234,7 @@ Goal for this step:
 - greenhouse OLED remains readable
 - outdoor node stays shaded and ventilated
 
-## Step 13: Normal operation checklist
+## Step 14: Normal operation checklist
 
 During the season, your normal checks should be simple:
 
@@ -234,8 +252,9 @@ If you want the shortest possible path, do it in this order:
 3. set up the Windows archive share with [windows-share-setup.md](windows-share-setup.md)
 4. run the temporary server on your main PC
 5. configure and upload the ESP32 firmware
-6. run range tests
-7. set up the Pi with [pi-setup.md](pi-setup.md)
-8. point both ESP32 boards at the Pi
-9. test the weekly archive
-10. install everything into the printed enclosures
+6. run `component_test`
+7. run range tests
+8. set up the Pi with [pi-setup.md](pi-setup.md)
+9. point both ESP32 boards at the Pi
+10. test the weekly archive
+11. install everything into the printed enclosures

@@ -28,7 +28,29 @@ def _utc_timestamp():
 def _interval_seconds():
     if config.RUN_MODE == "range_test":
         return config.RANGE_TEST_INTERVAL_SECONDS
+    if config.RUN_MODE == "component_test":
+        return getattr(
+            config,
+            "COMPONENT_TEST_INTERVAL_SECONDS",
+            config.RANGE_TEST_INTERVAL_SECONDS,
+        )
+    if config.RUN_MODE == "display_only":
+        return getattr(config, "DISPLAY_REFRESH_SECONDS", 2)
+    if not _uploads_enabled():
+        return getattr(config, "DISPLAY_REFRESH_SECONDS", config.UPLOAD_INTERVAL_SECONDS)
     return config.UPLOAD_INTERVAL_SECONDS
+
+
+def _uploads_enabled():
+    return getattr(config, "UPLOAD_ENABLED", True)
+
+
+def _server_url():
+    if config.RUN_MODE == "component_test":
+        temp_server_url = getattr(config, "TEMP_WINDOWS_SERVER_URL", None)
+        if temp_server_url:
+            return temp_server_url
+    return config.SERVER_URL
 
 
 def _sync_clock():
@@ -42,13 +64,17 @@ def _sync_clock():
 
 
 def run_device():
-    wifi = WiFiManager(
-        config.WIFI_SSID,
-        config.WIFI_PASSWORD,
-        timeout_s=config.WIFI_TIMEOUT_SECONDS,
-    )
+    uploads_enabled = _uploads_enabled()
+    wifi = None
+    uploader = None
+    if uploads_enabled:
+        wifi = WiFiManager(
+            config.WIFI_SSID,
+            config.WIFI_PASSWORD,
+            timeout_s=config.WIFI_TIMEOUT_SECONDS,
+        )
+        uploader = Uploader(_server_url(), timeout_s=config.HTTP_TIMEOUT_SECONDS)
     sensors = SensorSuite(config)
-    uploader = Uploader(config.SERVER_URL, timeout_s=config.HTTP_TIMEOUT_SECONDS)
     display = StatusDisplay(sensors.i2c, config) if config.OLED_ENABLED else None
 
     interval_seconds = _interval_seconds()
@@ -62,11 +88,16 @@ def run_device():
 
     while True:
         cycle_started_ms = time.ticks_ms()
-        wifi_ok = wifi.ensure_connected()
         readings = sensors.read_all()
-        rssi = wifi.rssi()
-        sent_at_utc = _utc_timestamp() if wifi_ok else None
+        wifi_ok = False
+        rssi = None
+        sent_at_utc = None
         sequence += 1
+
+        if wifi is not None:
+            wifi_ok = wifi.ensure_connected()
+            rssi = wifi.rssi()
+            sent_at_utc = _utc_timestamp() if wifi_ok else None
 
         payload = {
             "device_id": config.DEVICE_ID,
@@ -81,15 +112,15 @@ def run_device():
             "uptime_s": time.ticks_diff(time.ticks_ms(), boot_ms) // 1000,
         }
 
-        footer = "WIFI DOWN"
-        if wifi_ok:
+        footer = "DISPLAY ONLY"
+        if uploader and wifi_ok:
             success, status_code, latency_ms, _response_text = uploader.send(payload)
             last_latency_ms = latency_ms
             if success:
                 footer = "POST OK %dms" % latency_ms
             else:
                 footer = "HTTP %d" % status_code
-        else:
+        elif uploader:
             footer = "WIFI DOWN"
 
         if readings["errors"]:

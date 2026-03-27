@@ -72,6 +72,36 @@ class AppTestCase(unittest.TestCase):
         rows = list(csv.DictReader(response.data.decode("utf-8").splitlines()))
         self.assertEqual(len(rows), 2)
 
+    def test_component_test_mode_is_accepted(self) -> None:
+        response = self.client.post(
+            "/api/v1/readings",
+            json={
+                "device_id": "greenhouse",
+                "mode": "component_test",
+                "sequence": 2,
+                "wifi_rssi_dbm": -58,
+                "temperature_c": 23.0,
+                "humidity_pct": 52.0,
+                "light_lux": 210.0,
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+
+    def test_display_only_mode_is_accepted(self) -> None:
+        response = self.client.post(
+            "/api/v1/readings",
+            json={
+                "device_id": "portable_demo",
+                "mode": "display_only",
+                "sequence": 3,
+                "wifi_rssi_dbm": -127,
+                "temperature_c": 21.5,
+                "humidity_pct": 47.0,
+                "light_lux": 180.0,
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+
     def test_index_page_renders(self) -> None:
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)

@@ -34,7 +34,7 @@ OPTIONAL_NUMERIC_FIELDS = {
     "uptime_s": int,
 }
 OPTIONAL_TEXT_FIELDS = {"sent_at_utc": str}
-VALID_MODES = {"summer", "range_test"}
+VALID_MODES = {"summer", "range_test", "component_test", "display_only"}
 
 
 def create_app(settings: Settings | None = None) -> Flask:
@@ -144,7 +144,9 @@ def _validate_payload(payload: dict[str, Any]) -> dict[str, Any]:
     cleaned["device_id"] = cleaned["device_id"].strip()
 
     if cleaned["mode"] not in VALID_MODES:
-        raise ValueError("mode must be 'summer' or 'range_test'.")
+        raise ValueError(
+            "mode must be 'summer', 'range_test', 'component_test', or 'display_only'."
+        )
 
     for field_name, field_type in OPTIONAL_NUMERIC_FIELDS.items():
         value = payload.get(field_name)
