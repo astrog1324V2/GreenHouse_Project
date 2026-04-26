@@ -28,8 +28,9 @@ def utc_now_iso() -> str:
 
 
 def get_connection(db_path: Path) -> sqlite3.Connection:
-    connection = sqlite3.connect(db_path)
+    connection = sqlite3.connect(db_path, timeout=30.0)
     connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA busy_timeout = 30000")
     return connection
 
 
@@ -129,6 +130,20 @@ def fetch_reading_count(db_path: Path) -> int:
     with closing(get_connection(db_path)) as connection:
         row = connection.execute("SELECT COUNT(*) AS count FROM readings").fetchone()
     return int(row["count"])
+
+
+def delete_device_data(db_path: Path, device_id: str) -> bool:
+    with closing(get_connection(db_path)) as connection:
+        status_deleted = connection.execute(
+            "DELETE FROM device_status WHERE device_id = ?",
+            (device_id,),
+        ).rowcount
+        readings_deleted = connection.execute(
+            "DELETE FROM readings WHERE device_id = ?",
+            (device_id,),
+        ).rowcount
+        connection.commit()
+    return bool(status_deleted or readings_deleted)
 
 
 def fetch_latest_archive_run(db_path: Path) -> dict[str, Any] | None:

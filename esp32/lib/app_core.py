@@ -45,12 +45,66 @@ def _uploads_enabled():
     return getattr(config, "UPLOAD_ENABLED", True)
 
 
+def _pending_upload_limit():
+    return max(1, int(getattr(config, "MAX_PENDING_UPLOADS", 8)))
+
+
+def _queue_payload(pending_uploads, payload):
+    pending_uploads.append(payload)
+    overflow = len(pending_uploads) - _pending_upload_limit()
+    if overflow > 0:
+        del pending_uploads[:overflow]
+
+
+def _flush_pending_uploads(uploader, pending_uploads):
+    delivered = 0
+    last_status_code = 0
+    last_latency_ms = None
+    response_text = ""
+
+    while pending_uploads:
+        success, status_code, latency_ms, response_text = uploader.send(pending_uploads[0])
+        last_status_code = status_code
+        last_latency_ms = latency_ms
+        if not success:
+            return delivered, last_status_code, last_latency_ms, response_text
+        pending_uploads.pop(0)
+        delivered += 1
+
+    return delivered, last_status_code, last_latency_ms, response_text
+
+
+def _blank(value):
+    return not value or not str(value).strip()
+
+
 def _server_url():
     if config.RUN_MODE == "component_test":
         temp_server_url = getattr(config, "TEMP_WINDOWS_SERVER_URL", None)
-        if temp_server_url:
+        if temp_server_url and str(temp_server_url).strip():
             return temp_server_url
     return config.SERVER_URL
+
+
+def _upload_preflight_error():
+    if not _uploads_enabled():
+        return None
+
+    server_url = _server_url()
+    if _blank(server_url):
+        return "URL MISSING"
+    if not str(server_url).startswith("http://"):
+        return "URL INVALID"
+
+    ssid = getattr(config, "WIFI_SSID", "")
+    if _blank(ssid) or ssid == "YOUR_WIFI_SSID":
+        return "WIFI CONFIG"
+
+    password = getattr(config, "WIFI_PASSWORD", "")
+    if password == "YOUR_WIFI_PASSWORD":
+        return "WIFI CONFIG"
+
+    return None
 
 
 def _sync_clock():
@@ -64,9 +118,11 @@ def _sync_clock():
 
 
 def run_device():
-    uploads_enabled = _uploads_enabled()
+    upload_error = _upload_preflight_error()
+    uploads_enabled = _uploads_enabled() and upload_error is None
     wifi = None
     uploader = None
+    clock_sync_pending = True
     if uploads_enabled:
         wifi = WiFiManager(
             config.WIFI_SSID,
@@ -74,21 +130,37 @@ def run_device():
             timeout_s=config.WIFI_TIMEOUT_SECONDS,
         )
         uploader = Uploader(_server_url(), timeout_s=config.HTTP_TIMEOUT_SECONDS)
+    elif upload_error:
+        print("Uploads disabled: %s" % upload_error)
     sensors = SensorSuite(config)
-    display = StatusDisplay(sensors.i2c, config) if config.OLED_ENABLED else None
+    print("I2C scan=%s" % sensors.format_i2c_addresses())
+    display = None
+    if config.OLED_ENABLED:
+        if config.OLED_ADDR in sensors.i2c_addresses:
+            try:
+                display = StatusDisplay(sensors.i2c, config)
+            except Exception:
+                sensors.init_errors.append("OLED OFFLINE")
+        else:
+            sensors.init_errors.append("OLED OFFLINE")
 
     interval_seconds = _interval_seconds()
     boot_ms = time.ticks_ms()
     sequence = 0
     last_latency_ms = None
+    pending_uploads = []
 
-    _sync_clock()
     if display:
         display.render({"temperature_c": None, "humidity_pct": None, "light_lux": None}, "BOOT")
 
     while True:
         cycle_started_ms = time.ticks_ms()
         readings = sensors.read_all()
+        footer = upload_error or "DISPLAY ONLY"
+        if readings["errors"]:
+            footer = readings["errors"][0][:21]
+        if display:
+            display.render(readings, footer)
         wifi_ok = False
         rssi = None
         sent_at_utc = None
@@ -97,7 +169,11 @@ def run_device():
         if wifi is not None:
             wifi_ok = wifi.ensure_connected()
             rssi = wifi.rssi()
-            sent_at_utc = _utc_timestamp() if wifi_ok else None
+            if wifi_ok:
+                sent_at_utc = _utc_timestamp()
+                if clock_sync_pending:
+                    _sync_clock()
+                    clock_sync_pending = False
 
         payload = {
             "device_id": config.DEVICE_ID,
@@ -112,22 +188,37 @@ def run_device():
             "uptime_s": time.ticks_diff(time.ticks_ms(), boot_ms) // 1000,
         }
 
-        footer = "DISPLAY ONLY"
+        if uploader:
+            _queue_payload(pending_uploads, payload)
+
         if uploader and wifi_ok:
-            success, status_code, latency_ms, _response_text = uploader.send(payload)
-            last_latency_ms = latency_ms
-            if success:
-                footer = "POST OK %dms" % latency_ms
-            else:
-                footer = "HTTP %d" % status_code
+            try:
+                delivered, status_code, latency_ms, _response_text = _flush_pending_uploads(
+                    uploader, pending_uploads
+                )
+                if latency_ms is not None:
+                    last_latency_ms = latency_ms
+
+                if delivered > 0 and latency_ms is not None:
+                    if delivered == 1:
+                        footer = "POST OK %dms" % latency_ms
+                    else:
+                        footer = "SYNC %d OK" % delivered
+                elif delivered > 0:
+                    footer = "POST OK"
+                else:
+                    footer = "HTTP %d" % status_code
+            except Exception as exc:
+                footer = "UPLOAD ERROR"
+                print("Upload failed:", exc)
         elif uploader:
-            footer = "WIFI DOWN"
+            footer = "WIFI DOWN Q%d" % len(pending_uploads)
 
         if readings["errors"]:
             footer = readings["errors"][0][:21]
 
         print(
-            "mode=%s seq=%d wifi=%s temp=%s hum=%s light=%s status=%s"
+            "mode=%s seq=%d wifi=%s temp=%s hum=%s light=%s pending=%d status=%s"
             % (
                 config.RUN_MODE,
                 sequence,
@@ -135,6 +226,7 @@ def run_device():
                 readings["temperature_c"],
                 readings["humidity_pct"],
                 readings["light_lux"],
+                len(pending_uploads),
                 footer,
             )
         )

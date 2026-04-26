@@ -14,6 +14,11 @@ class WiFiManager:
         if self.wlan.isconnected():
             return True
 
+        if not self.ssid or self.ssid == "YOUR_WIFI_SSID":
+            return False
+        if self.password == "YOUR_WIFI_PASSWORD":
+            return False
+
         self.wlan.active(True)
         self.wlan.connect(self.ssid, self.password)
         deadline = time.ticks_add(time.ticks_ms(), int(self.timeout_s * 1000))

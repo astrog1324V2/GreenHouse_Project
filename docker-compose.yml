@@ -1,0 +1,18 @@
+services:
+  greenhouse-server:
+    build:
+      context: .
+    container_name: greenhouse-server
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      GREENHOUSE_HOST: 0.0.0.0
+      GREENHOUSE_PORT: 8000
+      GREENHOUSE_DATA_DIR: /app/data
+      GREENHOUSE_DB_PATH: /app/data/greenhouse.db
+      GREENHOUSE_EXPORT_DIR: /app/data/exports
+      GREENHOUSE_ARCHIVE_TEMP_DIR: /app/data/pending
+      GREENHOUSE_TIMEZONE: America/Toronto
+    volumes:
+      - ./data:/app/data

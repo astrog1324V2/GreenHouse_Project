@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import json
+import queue
+import threading
 from datetime import datetime, timezone
 from io import BytesIO
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from flask import Flask, Response, jsonify, render_template, request, send_file
+from flask import Flask, Response, jsonify, redirect, render_template, request, send_file, url_for
 
 from .archive import run_weekly_archive
 from .config import Settings, load_settings
 from .db import (
+    delete_device_data,
     fetch_device_statuses,
     fetch_latest_archive_run,
     fetch_reading_count,
@@ -37,9 +41,64 @@ OPTIONAL_TEXT_FIELDS = {"sent_at_utc": str}
 VALID_MODES = {"summer", "range_test", "component_test", "display_only"}
 
 
+class DashboardEventStream:
+    def __init__(self) -> None:
+        self._subscribers: set[queue.Queue[str]] = set()
+        self._lock = threading.Lock()
+
+    def subscribe(self) -> queue.Queue[str]:
+        subscriber: queue.Queue[str] = queue.Queue(maxsize=8)
+        with self._lock:
+            self._subscribers.add(subscriber)
+        return subscriber
+
+    def unsubscribe(self, subscriber: queue.Queue[str]) -> None:
+        with self._lock:
+            self._subscribers.discard(subscriber)
+
+    def publish(self, payload: dict[str, Any]) -> None:
+        serialized = self._serialize(payload)
+        with self._lock:
+            subscribers = list(self._subscribers)
+
+        for subscriber in subscribers:
+            if subscriber.full():
+                try:
+                    subscriber.get_nowait()
+                except queue.Empty:
+                    pass
+            try:
+                subscriber.put_nowait(serialized)
+            except queue.Full:
+                continue
+
+    def stream(self, initial_payload: dict[str, Any]):
+        subscriber = self.subscribe()
+        initial_message = self._serialize(initial_payload)
+
+        def generate():
+            try:
+                yield "retry: 5000\n"
+                yield initial_message
+                while True:
+                    try:
+                        yield subscriber.get(timeout=15)
+                    except queue.Empty:
+                        yield ": keepalive\n\n"
+            finally:
+                self.unsubscribe(subscriber)
+
+        return generate()
+
+    @staticmethod
+    def _serialize(payload: dict[str, Any]) -> str:
+        return "event: dashboard\ndata: %s\n\n" % json.dumps(payload, separators=(",", ":"))
+
+
 def create_app(settings: Settings | None = None) -> Flask:
     app = Flask(__name__)
     app.config["SETTINGS"] = settings or load_settings()
+    dashboard_events = DashboardEventStream()
 
     current_settings: Settings = app.config["SETTINGS"]
     current_settings.ensure_directories()
@@ -57,15 +116,18 @@ def create_app(settings: Settings | None = None) -> Flask:
 
     @app.get("/api/v1/latest")
     def latest() -> Response:
-        statuses = _build_status_payload(current_settings)
-        return jsonify(
-            {
-                "generated_at_utc": _utc_now_iso(),
-                "devices": statuses,
-                "deltas": _build_deltas(statuses),
-                "reading_count": fetch_reading_count(current_settings.db_path),
-                "latest_archive": fetch_latest_archive_run(current_settings.db_path),
-            }
+        return jsonify(_build_dashboard_payload(current_settings))
+
+    @app.get("/api/v1/stream")
+    def stream() -> Response:
+        return Response(
+            dashboard_events.stream(_build_dashboard_payload(current_settings)),
+            mimetype="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
         )
 
     @app.post("/api/v1/readings")
@@ -80,6 +142,7 @@ def create_app(settings: Settings | None = None) -> Flask:
             return jsonify({"error": str(exc)}), 400
 
         record = insert_reading(current_settings.db_path, cleaned_payload)
+        dashboard_events.publish(_build_dashboard_payload(current_settings))
         return jsonify({"status": "ok", "reading": record}), 201
 
     @app.get("/export.csv")
@@ -107,21 +170,23 @@ def create_app(settings: Settings | None = None) -> Flask:
             }
         ), status_code
 
+    @app.post("/admin/devices/<device_id>/delete")
+    def delete_device(device_id: str) -> Response:
+        if not delete_device_data(current_settings.db_path, device_id):
+            return jsonify({"error": f"Unknown device: {device_id}"}), 404
+        return redirect(url_for("index"), code=303)
+
     @app.get("/")
     def index() -> str:
-        statuses = _build_status_payload(current_settings)
-        history = fetch_recent_history(
-            current_settings.db_path, current_settings.ui_history_limit
-        )
-        reading_count = fetch_reading_count(current_settings.db_path)
+        dashboard = _build_dashboard_payload(current_settings)
         return render_template(
             "index.html",
-            generated_at_local=_format_local(_utc_now_iso(), current_settings.timezone),
-            devices=statuses,
-            deltas=_build_deltas(statuses),
-            history=history,
-            reading_count=reading_count,
-            latest_archive=fetch_latest_archive_run(current_settings.db_path),
+            generated_at_local=dashboard["generated_at_local"],
+            devices=dashboard["devices"],
+            deltas=dashboard["deltas"],
+            history=dashboard["history"],
+            reading_count=dashboard["reading_count"],
+            latest_archive=dashboard["latest_archive"],
         )
 
     return app
@@ -203,6 +268,26 @@ def _build_status_payload(settings: Settings) -> dict[str, dict[str, Any]]:
         item["is_stale"] = age_seconds > settings.stale_minutes * 60
         devices[item["device_id"]] = item
     return devices
+
+
+def _build_dashboard_payload(settings: Settings) -> dict[str, Any]:
+    devices = _build_status_payload(settings)
+    history = fetch_recent_history(settings.db_path, settings.ui_history_limit)
+
+    for rows in history.values():
+        for row in rows:
+            row["received_at_local"] = _format_local(row["received_at_utc"], settings.timezone)
+            row["sent_at_local"] = _format_local(row["sent_at_utc"], settings.timezone)
+
+    return {
+        "generated_at_utc": _utc_now_iso(),
+        "generated_at_local": _format_local(_utc_now_iso(), settings.timezone),
+        "devices": devices,
+        "deltas": _build_deltas(devices),
+        "history": history,
+        "reading_count": fetch_reading_count(settings.db_path),
+        "latest_archive": fetch_latest_archive_run(settings.db_path),
+    }
 
 
 def _build_deltas(devices: dict[str, dict[str, Any]]) -> dict[str, float | None]:

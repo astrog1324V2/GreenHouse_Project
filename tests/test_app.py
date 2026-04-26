@@ -51,6 +51,31 @@ class AppTestCase(unittest.TestCase):
         latest = latest_response.get_json()
         self.assertIn("greenhouse", latest["devices"])
         self.assertEqual(latest["devices"]["greenhouse"]["sequence"], 10)
+        self.assertIn("history", latest)
+        self.assertIn("greenhouse", latest["history"])
+
+    def test_stream_emits_dashboard_event(self) -> None:
+        self.client.post(
+            "/api/v1/readings",
+            json={
+                "device_id": "greenhouse",
+                "mode": "summer",
+                "sequence": 1,
+                "wifi_rssi_dbm": -61,
+                "temperature_c": 24.0,
+                "humidity_pct": 60.0,
+                "light_lux": 300.0,
+            },
+        )
+
+        response = self.client.get("/api/v1/stream", buffered=False)
+        first_chunk = next(response.response).decode("utf-8")
+        second_chunk = next(response.response).decode("utf-8")
+        response.close()
+
+        self.assertIn("retry: 5000", first_chunk)
+        self.assertIn("event: dashboard", second_chunk)
+        self.assertIn('"reading_count":1', second_chunk)
 
     def test_export_csv_contains_rows(self) -> None:
         for device_id in ("greenhouse", "outdoor"):
@@ -106,6 +131,31 @@ class AppTestCase(unittest.TestCase):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Current conditions", response.data.decode("utf-8"))
+
+    def test_delete_device_removes_status_and_history(self) -> None:
+        for sequence in (1, 2):
+            self.client.post(
+                "/api/v1/readings",
+                json={
+                    "device_id": "retired_node",
+                    "mode": "summer",
+                    "sequence": sequence,
+                    "wifi_rssi_dbm": -71,
+                    "temperature_c": 19.5,
+                    "humidity_pct": 48.0,
+                    "light_lux": 90.0,
+                },
+            )
+
+        response = self.client.post("/admin/devices/retired_node/delete")
+        self.assertEqual(response.status_code, 303)
+
+        latest = self.client.get("/api/v1/latest").get_json()
+        self.assertNotIn("retired_node", latest["devices"])
+        self.assertEqual(latest["reading_count"], 0)
+
+        index_response = self.client.get("/")
+        self.assertNotIn("Retired Node", index_response.data.decode("utf-8"))
 
 
 if __name__ == "__main__":

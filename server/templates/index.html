@@ -12,7 +12,8 @@
             <div>
                 <p class="eyebrow">Local greenhouse monitor</p>
                 <h1>Current conditions</h1>
-                <p class="subtle">Last refreshed {{ generated_at_local }}</p>
+                <p class="subtle">Last refreshed <span id="refresh-timestamp">{{ generated_at_local }}</span></p>
+                <p class="live-note" id="live-status">Live updates waiting for the next reading.</p>
             </div>
             <div class="hero-meta">
                 <div class="metric-chip">
@@ -28,9 +29,14 @@
             <article class="card">
                 <div class="card-top">
                     <h2>{{ device_id|replace('_', ' ')|title }}</h2>
-                    <span class="status {{ 'status-stale' if device.is_stale else 'status-fresh' }}">
-                        {{ 'Stale' if device.is_stale else 'Fresh' }}
-                    </span>
+                    <div class="card-actions">
+                        <span class="status {{ 'status-stale' if device.is_stale else 'status-fresh' }}">
+                            {{ 'Stale' if device.is_stale else 'Fresh' }}
+                        </span>
+                        <form method="post" action="{{ url_for('delete_device', device_id=device_id) }}" onsubmit="return confirm('Delete {{ device_id }} and all of its stored readings?');">
+                            <button class="button button-danger button-small" type="submit">Delete device</button>
+                        </form>
+                    </div>
                 </div>
                 <p class="timestamp">Last seen {{ device.received_at_local }}</p>
                 <div class="reading-grid">
@@ -111,7 +117,7 @@
                         <tbody>
                             {% for row in rows %}
                             <tr>
-                                <td>{{ row.received_at_utc }}</td>
+                                <td>{{ row.received_at_local or row.received_at_utc }}</td>
                                 <td>{{ "%.1f"|format(row.temperature_c) if row.temperature_c is not none else "--" }}</td>
                                 <td>{{ "%.1f"|format(row.humidity_pct) if row.humidity_pct is not none else "--" }}</td>
                                 <td>{{ "%.0f"|format(row.light_lux) if row.light_lux is not none else "--" }}</td>
@@ -129,5 +135,37 @@
             </div>
         </section>
     </main>
+
+    <script>
+        (() => {
+            const liveStatus = document.getElementById("live-status");
+            if (!window.EventSource || !liveStatus) {
+                return;
+            }
+
+            let reloadTimer = null;
+            const stream = new EventSource("{{ url_for('stream') }}");
+
+            const queueReload = (message) => {
+                liveStatus.textContent = message;
+                if (reloadTimer !== null) {
+                    window.clearTimeout(reloadTimer);
+                }
+                reloadTimer = window.setTimeout(() => window.location.reload(), 300);
+            };
+
+            stream.addEventListener("open", () => {
+                liveStatus.textContent = "Live updates connected.";
+            });
+
+            stream.addEventListener("dashboard", () => {
+                queueReload("New reading received. Refreshing dashboard...");
+            });
+
+            stream.onerror = () => {
+                liveStatus.textContent = "Live updates disconnected. Waiting to reconnect...";
+            };
+        })();
+    </script>
 </body>
 </html>
