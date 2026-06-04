@@ -33,7 +33,9 @@ body {
 
 .hero,
 .card,
-.delta-panel,
+.reading-tile,
+.extreme-card,
+.empty-state,
 .history-card {
     background: var(--panel);
     border: 1px solid var(--line);
@@ -44,9 +46,14 @@ body {
 .hero {
     display: flex;
     justify-content: space-between;
+    align-items: flex-start;
     gap: 18px;
     padding: 28px;
     margin-bottom: 24px;
+}
+
+.client-hero {
+    margin-bottom: 18px;
 }
 
 .eyebrow {
@@ -123,6 +130,77 @@ h1 {
     background: var(--danger);
 }
 
+.button-secondary {
+    background: #3b4b62;
+}
+
+.current-panel {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+}
+
+.reading-tile,
+.extreme-card,
+.empty-state {
+    padding: 24px;
+}
+
+.reading-tile strong {
+    display: block;
+    margin-top: 8px;
+    font-size: clamp(2.4rem, 8vw, 5.4rem);
+    line-height: 0.95;
+}
+
+.reading-tile-temp {
+    border-top: 5px solid #b64e36;
+}
+
+.reading-tile-humidity {
+    border-top: 5px solid #2f6d8f;
+}
+
+.reading-tile-light {
+    border-top: 5px solid #c6952e;
+}
+
+.client-timestamp {
+    margin: 14px 0 0;
+}
+
+.section-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 14px;
+}
+
+.section-heading h2 {
+    margin-bottom: 0;
+}
+
+.extremes-panel {
+    margin-top: 28px;
+}
+
+.extremes-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+}
+
+.extreme-card strong {
+    display: block;
+    margin: 8px 0 6px;
+    font-size: 2.3rem;
+}
+
+.empty-state {
+    margin-top: 18px;
+}
+
 .cards {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -130,7 +208,6 @@ h1 {
 }
 
 .card,
-.delta-panel,
 .history-card {
     padding: 22px;
 }
@@ -151,7 +228,6 @@ h1 {
 }
 
 .reading-grid,
-.delta-grid,
 .history-columns {
     display: grid;
     gap: 14px;
@@ -162,8 +238,7 @@ h1 {
     margin: 18px 0;
 }
 
-.reading-grid strong,
-.delta-grid strong {
+.reading-grid strong {
     display: block;
     margin-top: 4px;
     font-size: 1.25rem;
@@ -184,15 +259,6 @@ h1 {
 .status-stale {
     background: var(--danger-soft);
     color: var(--danger);
-}
-
-.delta-panel {
-    margin-top: 24px;
-}
-
-.delta-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
 .history {
@@ -239,5 +305,10 @@ th {
 
     h1 {
         font-size: 1.9rem;
+    }
+
+    .current-panel,
+    .extremes-grid {
+        grid-template-columns: 1fr;
     }
 }

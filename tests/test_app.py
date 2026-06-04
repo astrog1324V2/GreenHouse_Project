@@ -53,6 +53,7 @@ class AppTestCase(unittest.TestCase):
         self.assertEqual(latest["devices"]["greenhouse"]["sequence"], 10)
         self.assertIn("history", latest)
         self.assertIn("greenhouse", latest["history"])
+        self.assertNotIn("deltas", latest)
 
     def test_stream_emits_dashboard_event(self) -> None:
         self.client.post(
@@ -130,7 +131,61 @@ class AppTestCase(unittest.TestCase):
     def test_index_page_renders(self) -> None:
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Current conditions", response.data.decode("utf-8"))
+        html = response.data.decode("utf-8")
+        self.assertIn("Greenhouse conditions", html)
+        self.assertNotIn("Download CSV", html)
+        self.assertNotIn("Delete device", html)
+        self.assertNotIn("Greenhouse vs outdoor delta", html)
+
+    def test_index_page_shows_current_and_12_hour_extremes(self) -> None:
+        for sequence, temperature in ((1, 24.0), (2, 31.5), (3, 19.8)):
+            self.client.post(
+                "/api/v1/readings",
+                json={
+                    "device_id": "greenhouse",
+                    "mode": "summer",
+                    "sequence": sequence,
+                    "wifi_rssi_dbm": -62,
+                    "temperature_c": temperature,
+                    "humidity_pct": 66.1,
+                    "light_lux": 348.0,
+                },
+            )
+
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        html = response.data.decode("utf-8")
+        self.assertIn("Temperature", html)
+        self.assertIn("Humidity", html)
+        self.assertIn("Light", html)
+        self.assertIn("Last 12 hours", html)
+        self.assertIn("31.5", html)
+        self.assertIn("19.8", html)
+        self.assertNotIn("WiFi RSSI", html)
+
+    def test_dev_page_renders_admin_tools_and_history(self) -> None:
+        self.client.post(
+            "/api/v1/readings",
+            json={
+                "device_id": "greenhouse",
+                "mode": "summer",
+                "sequence": 4,
+                "wifi_rssi_dbm": -64,
+                "temperature_c": 26.0,
+                "humidity_pct": 58.0,
+                "light_lux": 410.0,
+            },
+        )
+
+        response = self.client.get("/dev")
+        self.assertEqual(response.status_code, 200)
+        html = response.data.decode("utf-8")
+        self.assertIn("Developer dashboard", html)
+        self.assertIn("Download CSV", html)
+        self.assertIn("Delete device", html)
+        self.assertIn("Latest readings", html)
+        self.assertIn("WiFi RSSI", html)
+        self.assertNotIn("Greenhouse vs outdoor delta", html)
 
     def test_delete_device_removes_status_and_history(self) -> None:
         for sequence in (1, 2):
@@ -149,6 +204,7 @@ class AppTestCase(unittest.TestCase):
 
         response = self.client.post("/admin/devices/retired_node/delete")
         self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["Location"], "/dev")
 
         latest = self.client.get("/api/v1/latest").get_json()
         self.assertNotIn("retired_node", latest["devices"])

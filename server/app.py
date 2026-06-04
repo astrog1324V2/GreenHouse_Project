@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import queue
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -18,6 +18,7 @@ from .db import (
     fetch_latest_archive_run,
     fetch_reading_count,
     fetch_recent_history,
+    fetch_temperature_extremes,
     initialize_database,
     insert_reading,
     write_csv_export,
@@ -39,6 +40,8 @@ OPTIONAL_NUMERIC_FIELDS = {
 }
 OPTIONAL_TEXT_FIELDS = {"sent_at_utc": str}
 VALID_MODES = {"summer", "range_test", "component_test", "display_only"}
+CLIENT_DEVICE_ID = "greenhouse"
+CLIENT_EXTREMES_HOURS = 12
 
 
 class DashboardEventStream:
@@ -174,16 +177,27 @@ def create_app(settings: Settings | None = None) -> Flask:
     def delete_device(device_id: str) -> Response:
         if not delete_device_data(current_settings.db_path, device_id):
             return jsonify({"error": f"Unknown device: {device_id}"}), 404
-        return redirect(url_for("index"), code=303)
+        return redirect(url_for("dev"), code=303)
 
     @app.get("/")
     def index() -> str:
-        dashboard = _build_dashboard_payload(current_settings)
+        dashboard = _build_client_payload(current_settings, CLIENT_DEVICE_ID)
         return render_template(
             "index.html",
             generated_at_local=dashboard["generated_at_local"],
+            device_id=dashboard["device_id"],
+            device=dashboard["device"],
+            temperature_extremes=dashboard["temperature_extremes"],
+            extremes_window_hours=CLIENT_EXTREMES_HOURS,
+        )
+
+    @app.get("/dev")
+    def dev() -> str:
+        dashboard = _build_dashboard_payload(current_settings)
+        return render_template(
+            "dev.html",
+            generated_at_local=dashboard["generated_at_local"],
             devices=dashboard["devices"],
-            deltas=dashboard["deltas"],
             history=dashboard["history"],
             reading_count=dashboard["reading_count"],
             latest_archive=dashboard["latest_archive"],
@@ -273,6 +287,7 @@ def _build_status_payload(settings: Settings) -> dict[str, dict[str, Any]]:
 def _build_dashboard_payload(settings: Settings) -> dict[str, Any]:
     devices = _build_status_payload(settings)
     history = fetch_recent_history(settings.db_path, settings.ui_history_limit)
+    generated_at_utc = _utc_now_iso()
 
     for rows in history.values():
         for row in rows:
@@ -280,33 +295,53 @@ def _build_dashboard_payload(settings: Settings) -> dict[str, Any]:
             row["sent_at_local"] = _format_local(row["sent_at_utc"], settings.timezone)
 
     return {
-        "generated_at_utc": _utc_now_iso(),
-        "generated_at_local": _format_local(_utc_now_iso(), settings.timezone),
+        "generated_at_utc": generated_at_utc,
+        "generated_at_local": _format_local(generated_at_utc, settings.timezone),
         "devices": devices,
-        "deltas": _build_deltas(devices),
         "history": history,
         "reading_count": fetch_reading_count(settings.db_path),
         "latest_archive": fetch_latest_archive_run(settings.db_path),
     }
 
 
-def _build_deltas(devices: dict[str, dict[str, Any]]) -> dict[str, float | None]:
-    greenhouse = devices.get("greenhouse")
-    outdoor = devices.get("outdoor")
-    if not greenhouse or not outdoor:
-        return {"temperature_c": None, "humidity_pct": None, "light_lux": None}
+def _build_client_payload(settings: Settings, device_id: str) -> dict[str, Any]:
+    generated_at_utc = _utc_now_iso()
+    devices = _build_status_payload(settings)
 
     return {
-        "temperature_c": _delta(greenhouse.get("temperature_c"), outdoor.get("temperature_c")),
-        "humidity_pct": _delta(greenhouse.get("humidity_pct"), outdoor.get("humidity_pct")),
-        "light_lux": _delta(greenhouse.get("light_lux"), outdoor.get("light_lux")),
+        "generated_at_utc": generated_at_utc,
+        "generated_at_local": _format_local(generated_at_utc, settings.timezone),
+        "device_id": device_id,
+        "device": devices.get(device_id),
+        "temperature_extremes": _build_temperature_extremes(
+            settings,
+            device_id,
+            CLIENT_EXTREMES_HOURS,
+        ),
     }
 
 
-def _delta(left: Any, right: Any) -> float | None:
-    if left is None or right is None:
-        return None
-    return round(float(left) - float(right), 2)
+def _build_temperature_extremes(
+    settings: Settings,
+    device_id: str,
+    hours: int,
+) -> dict[str, dict[str, Any] | None]:
+    since_utc = (datetime.now(timezone.utc) - timedelta(hours=hours)).replace(
+        microsecond=0
+    ).isoformat()
+    extremes = fetch_temperature_extremes(
+        settings.db_path,
+        device_id=device_id,
+        since_utc=since_utc,
+    )
+
+    for row in extremes.values():
+        if row is None:
+            continue
+        row["received_at_local"] = _format_local(row["received_at_utc"], settings.timezone)
+        row["sent_at_local"] = _format_local(row["sent_at_utc"], settings.timezone)
+
+    return extremes
 
 
 def _format_local(timestamp_utc: str | None, timezone_name: str) -> str | None:

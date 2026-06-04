@@ -1,0 +1,98 @@
+<script>
+    (() => {
+        const liveStatus = document.getElementById("live-status");
+        if (!liveStatus) {
+            return;
+        }
+
+        const latestUrl = "{{ url_for('latest') }}";
+        const streamUrl = "{{ url_for('stream') }}";
+        let latestSignature = null;
+        let reloadTimer = null;
+        let fallbackTimer = null;
+
+        const buildSignature = (payload) => {
+            const devices = payload.devices || {};
+            return JSON.stringify({
+                reading_count: payload.reading_count,
+                devices: Object.keys(devices).sort().map((deviceId) => {
+                    const device = devices[deviceId] || {};
+                    return [
+                        deviceId,
+                        device.sequence,
+                        device.received_at_utc,
+                        device.is_stale,
+                    ];
+                }),
+            });
+        };
+
+        const queueReload = (message) => {
+            liveStatus.textContent = message;
+            if (reloadTimer !== null) {
+                window.clearTimeout(reloadTimer);
+            }
+            reloadTimer = window.setTimeout(() => window.location.reload(), 300);
+        };
+
+        const processPayload = (payload, message) => {
+            const nextSignature = buildSignature(payload);
+            if (latestSignature === null) {
+                latestSignature = nextSignature;
+                return;
+            }
+            if (nextSignature !== latestSignature) {
+                latestSignature = nextSignature;
+                queueReload(message);
+            }
+        };
+
+        const pollLatest = async () => {
+            try {
+                const response = await fetch(latestUrl, { cache: "no-store" });
+                if (!response.ok) {
+                    throw new Error(`Latest request failed: ${response.status}`);
+                }
+                processPayload(await response.json(), "New reading found. Refreshing dashboard...");
+            } catch (error) {
+                liveStatus.textContent = "Live updates disconnected. Retrying...";
+            }
+        };
+
+        const startFallbackPolling = () => {
+            if (fallbackTimer !== null) {
+                return;
+            }
+            liveStatus.textContent = "Live updates disconnected. Checking every 15 seconds.";
+            pollLatest();
+            fallbackTimer = window.setInterval(pollLatest, 15000);
+        };
+
+        const stopFallbackPolling = () => {
+            if (fallbackTimer !== null) {
+                window.clearInterval(fallbackTimer);
+                fallbackTimer = null;
+            }
+        };
+
+        if (!window.EventSource) {
+            startFallbackPolling();
+            return;
+        }
+
+        const stream = new EventSource(streamUrl);
+
+        stream.addEventListener("open", () => {
+            stopFallbackPolling();
+            liveStatus.textContent = "Live updates connected.";
+        });
+
+        stream.addEventListener("dashboard", (event) => {
+            processPayload(JSON.parse(event.data), "New reading received. Refreshing dashboard...");
+        });
+
+        stream.onerror = () => {
+            startFallbackPolling();
+        };
+    })();
+</script>
