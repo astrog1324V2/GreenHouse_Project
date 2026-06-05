@@ -34,7 +34,7 @@ body {
 .hero,
 .card,
 .reading-tile,
-.extreme-card,
+.time-temp-card,
 .empty-state,
 .history-card {
     background: var(--panel);
@@ -141,7 +141,7 @@ h1 {
 }
 
 .reading-tile,
-.extreme-card,
+.time-temp-card,
 .empty-state {
     padding: 24px;
 }
@@ -181,17 +181,17 @@ h1 {
     margin-bottom: 0;
 }
 
-.extremes-panel {
+.time-temp-panel {
     margin-top: 28px;
 }
 
-.extremes-grid {
+.time-temp-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 18px;
 }
 
-.extreme-card strong {
+.time-temp-card strong {
     display: block;
     margin: 8px 0 6px;
     font-size: 2.3rem;
@@ -308,7 +308,7 @@ th {
     }
 
     .current-panel,
-    .extremes-grid {
+    .time-temp-grid {
         grid-template-columns: 1fr;
     }
 }

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import queue
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from io import BytesIO
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -18,7 +18,7 @@ from .db import (
     fetch_latest_archive_run,
     fetch_reading_count,
     fetch_recent_history,
-    fetch_temperature_extremes,
+    fetch_temperature_readings,
     initialize_database,
     insert_reading,
     write_csv_export,
@@ -41,7 +41,10 @@ OPTIONAL_NUMERIC_FIELDS = {
 OPTIONAL_TEXT_FIELDS = {"sent_at_utc": str}
 VALID_MODES = {"summer", "range_test", "component_test", "display_only"}
 CLIENT_DEVICE_ID = "greenhouse"
-CLIENT_EXTREMES_HOURS = 12
+CLIENT_TEMPERATURE_HOURS = (
+    {"label": "3 PM", "hour": 15},
+    {"label": "3 AM", "hour": 3},
+)
 
 
 class DashboardEventStream:
@@ -187,8 +190,7 @@ def create_app(settings: Settings | None = None) -> Flask:
             generated_at_local=dashboard["generated_at_local"],
             device_id=dashboard["device_id"],
             device=dashboard["device"],
-            temperature_extremes=dashboard["temperature_extremes"],
-            extremes_window_hours=CLIENT_EXTREMES_HOURS,
+            temperature_snapshots=dashboard["temperature_snapshots"],
         )
 
     @app.get("/dev")
@@ -313,35 +315,42 @@ def _build_client_payload(settings: Settings, device_id: str) -> dict[str, Any]:
         "generated_at_local": _format_local(generated_at_utc, settings.timezone),
         "device_id": device_id,
         "device": devices.get(device_id),
-        "temperature_extremes": _build_temperature_extremes(
-            settings,
-            device_id,
-            CLIENT_EXTREMES_HOURS,
-        ),
+        "temperature_snapshots": _build_temperature_snapshots(settings, device_id),
     }
 
 
-def _build_temperature_extremes(
+def _build_temperature_snapshots(
     settings: Settings,
     device_id: str,
-    hours: int,
-) -> dict[str, dict[str, Any] | None]:
-    since_utc = (datetime.now(timezone.utc) - timedelta(hours=hours)).replace(
-        microsecond=0
-    ).isoformat()
-    extremes = fetch_temperature_extremes(
-        settings.db_path,
-        device_id=device_id,
-        since_utc=since_utc,
-    )
+) -> list[dict[str, Any]]:
+    target_hours = {item["hour"] for item in CLIENT_TEMPERATURE_HOURS}
+    readings_by_hour: dict[int, dict[str, Any]] = {}
 
-    for row in extremes.values():
-        if row is None:
+    for row in fetch_temperature_readings(settings.db_path, device_id=device_id):
+        local_hour = _local_hour(row["received_at_utc"], settings.timezone)
+        if local_hour not in target_hours or local_hour in readings_by_hour:
             continue
         row["received_at_local"] = _format_local(row["received_at_utc"], settings.timezone)
         row["sent_at_local"] = _format_local(row["sent_at_utc"], settings.timezone)
+        readings_by_hour[local_hour] = row
+        if len(readings_by_hour) == len(target_hours):
+            break
 
-    return extremes
+    return [
+        {
+            "label": item["label"],
+            "hour": item["hour"],
+            "reading": readings_by_hour.get(item["hour"]),
+        }
+        for item in CLIENT_TEMPERATURE_HOURS
+    ]
+
+
+def _local_hour(timestamp_utc: str | None, timezone_name: str) -> int | None:
+    if not timestamp_utc:
+        return None
+    parsed = datetime.fromisoformat(timestamp_utc)
+    return parsed.astimezone(ZoneInfo(timezone_name)).hour
 
 
 def _format_local(timestamp_utc: str | None, timezone_name: str) -> str | None:

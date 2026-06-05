@@ -4,10 +4,12 @@ import csv
 import os
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from server.app import create_app
 from server.config import load_settings
+from server.db import get_connection
 
 
 class AppTestCase(unittest.TestCase):
@@ -137,8 +139,13 @@ class AppTestCase(unittest.TestCase):
         self.assertNotIn("Delete device", html)
         self.assertNotIn("Greenhouse vs outdoor delta", html)
 
-    def test_index_page_shows_current_and_12_hour_extremes(self) -> None:
-        for sequence, temperature in ((1, 24.0), (2, 31.5), (3, 19.8)):
+    def test_index_page_shows_current_and_3_pm_3_am_temperatures(self) -> None:
+        readings = (
+            (1, 31.5, "2026-06-03T19:05:00+00:00"),
+            (2, 24.0, "2026-06-02T19:05:00+00:00"),
+            (3, 19.8, "2026-06-04T07:10:00+00:00"),
+        )
+        for sequence, temperature, received_at_utc in readings:
             self.client.post(
                 "/api/v1/readings",
                 json={
@@ -151,6 +158,16 @@ class AppTestCase(unittest.TestCase):
                     "light_lux": 348.0,
                 },
             )
+            with closing(get_connection(self.app.config["SETTINGS"].db_path)) as connection:
+                connection.execute(
+                    """
+                    UPDATE readings
+                    SET received_at_utc = ?
+                    WHERE device_id = ? AND sequence = ?
+                    """,
+                    (received_at_utc, "greenhouse", sequence),
+                )
+                connection.commit()
 
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
@@ -158,9 +175,12 @@ class AppTestCase(unittest.TestCase):
         self.assertIn("Temperature", html)
         self.assertIn("Humidity", html)
         self.assertIn("Light", html)
-        self.assertIn("Last 12 hours", html)
+        self.assertIn("Latest 3 PM and 3 AM temps", html)
+        self.assertIn("3 PM", html)
+        self.assertIn("3 AM", html)
         self.assertIn("31.5", html)
         self.assertIn("19.8", html)
+        self.assertNotIn("24.0", html)
         self.assertNotIn("WiFi RSSI", html)
 
     def test_dev_page_renders_admin_tools_and_history(self) -> None:

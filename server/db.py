@@ -126,36 +126,24 @@ def fetch_recent_history(db_path: Path, limit_per_device: int) -> dict[str, list
     return history
 
 
-def fetch_temperature_extremes(
+def fetch_temperature_readings(
     db_path: Path,
     *,
     device_id: str,
-    since_utc: str,
-) -> dict[str, dict[str, Any] | None]:
-    queries = {
-        "hottest": "DESC",
-        "coldest": "ASC",
-    }
-    result: dict[str, dict[str, Any] | None] = {}
-
+) -> list[dict[str, Any]]:
     with closing(get_connection(db_path)) as connection:
-        for label, direction in queries.items():
-            row = connection.execute(
-                f"""
-                SELECT device_id, mode, sequence, wifi_rssi_dbm, temperature_c,
-                       humidity_pct, light_lux, sent_at_utc, latency_ms, uptime_s, received_at_utc
-                FROM readings
-                WHERE device_id = ?
-                  AND received_at_utc >= ?
-                  AND temperature_c IS NOT NULL
-                ORDER BY temperature_c {direction}, received_at_utc DESC
-                LIMIT 1
-                """,
-                (device_id, since_utc),
-            ).fetchone()
-            result[label] = dict(row) if row else None
-
-    return result
+        rows = connection.execute(
+            """
+            SELECT device_id, mode, sequence, wifi_rssi_dbm, temperature_c,
+                   humidity_pct, light_lux, sent_at_utc, latency_ms, uptime_s, received_at_utc
+            FROM readings
+            WHERE device_id = ?
+              AND temperature_c IS NOT NULL
+            ORDER BY received_at_utc DESC
+            """,
+            (device_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def fetch_reading_count(db_path: Path) -> int:

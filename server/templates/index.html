@@ -46,31 +46,23 @@
         </section>
         {% endif %}
 
-        <section class="extremes-panel" aria-label="Temperature range">
+        <section class="time-temp-panel" aria-label="3 AM and 3 PM temperatures">
             <div class="section-heading">
-                <h2>Last {{ extremes_window_hours }} hours</h2>
+                <h2>Latest 3 PM and 3 AM temps</h2>
             </div>
-            <div class="extremes-grid">
-                <article class="extreme-card">
-                    <span class="label">Hottest</span>
-                    {% if temperature_extremes.hottest %}
-                    <strong>{{ "%.1f"|format(temperature_extremes.hottest.temperature_c) }}&deg;C</strong>
-                    <span class="timestamp">{{ temperature_extremes.hottest.received_at_local }}</span>
+            <div class="time-temp-grid">
+                {% for snapshot in temperature_snapshots %}
+                <article class="time-temp-card">
+                    <span class="label">{{ snapshot.label }}</span>
+                    {% if snapshot.reading %}
+                    <strong>{{ "%.1f"|format(snapshot.reading.temperature_c) }}&deg;C</strong>
+                    <span class="timestamp">{{ snapshot.reading.received_at_local }}</span>
                     {% else %}
                     <strong>--</strong>
-                    <span class="timestamp">No temperature readings in this window.</span>
+                    <span class="timestamp">No temperature reading from this hour yet.</span>
                     {% endif %}
                 </article>
-                <article class="extreme-card">
-                    <span class="label">Coldest</span>
-                    {% if temperature_extremes.coldest %}
-                    <strong>{{ "%.1f"|format(temperature_extremes.coldest.temperature_c) }}&deg;C</strong>
-                    <span class="timestamp">{{ temperature_extremes.coldest.received_at_local }}</span>
-                    {% else %}
-                    <strong>--</strong>
-                    <span class="timestamp">No temperature readings in this window.</span>
-                    {% endif %}
-                </article>
+                {% endfor %}
             </div>
         </section>
     </main>
