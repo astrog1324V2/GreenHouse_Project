@@ -155,6 +155,8 @@ struct KeychainTokenStore {
 @MainActor
 @Observable
 final class DashboardStore {
+    private static let defaultBaseURLString = "https://greenhouse-api.nathansapps.ca"
+
     var configuration: AppConfiguration
     var payload: AppLatestResponse?
     var isLoading = false
@@ -175,7 +177,7 @@ final class DashboardStore {
         self.cache = cache
         self.tokenStore = tokenStore
         self.configuration = AppConfiguration(
-            baseURLString: defaults.string(forKey: baseURLKey) ?? "",
+            baseURLString: defaults.string(forKey: baseURLKey) ?? Self.defaultBaseURLString,
             readToken: tokenStore.readToken() ?? ""
         )
     }
