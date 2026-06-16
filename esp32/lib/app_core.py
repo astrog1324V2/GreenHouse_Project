@@ -181,10 +181,10 @@ def run_device():
             wifi_ok = wifi.ensure_connected()
             rssi = wifi.rssi()
             if wifi_ok:
-                sent_at_utc = _utc_timestamp()
                 if clock_sync_pending:
                     _sync_clock()
                     clock_sync_pending = False
+                sent_at_utc = _utc_timestamp()
 
         payload = {
             "device_id": config.DEVICE_ID,
