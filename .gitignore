@@ -6,3 +6,7 @@ data/
 *.db-shm
 *.db-wal
 .env
+
+# Xcode local user state
+xcuserdata/
+*.xcuserstate

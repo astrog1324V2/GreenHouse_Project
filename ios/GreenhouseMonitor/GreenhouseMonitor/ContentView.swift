@@ -77,12 +77,6 @@ struct DashboardView: View {
 
                 LazyVGrid(columns: columns, spacing: 12) {
                     MetricTile(
-                        title: "Temperature",
-                        value: ReadingFormat.temperature(payload.current?.temperatureC),
-                        systemImage: "thermometer.medium",
-                        tint: .green
-                    )
-                    MetricTile(
                         title: "Humidity",
                         value: ReadingFormat.percent(payload.current?.humidityPct),
                         systemImage: "humidity",
