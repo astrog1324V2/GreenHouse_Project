@@ -22,17 +22,29 @@ def _parse_url(url):
     return host, port, "/" + path
 
 
-def post_json(url, payload, timeout_s=10):
+def post_json(url, payload, timeout_s=10, headers=None):
     host, port, path = _parse_url(url)
     body = json.dumps(payload)
+    extra_headers = ""
+    if headers:
+        for name, value in headers.items():
+            if value is not None and str(value).strip():
+                extra_headers += "%s: %s\r\n" % (name, value)
     request = (
         "POST {path} HTTP/1.1\r\n"
         "Host: {host}\r\n"
         "Content-Type: application/json\r\n"
+        "{extra_headers}"
         "Content-Length: {length}\r\n"
         "Connection: close\r\n\r\n"
         "{body}"
-    ).format(path=path, host=host, length=len(body), body=body)
+    ).format(
+        path=path,
+        host=host,
+        extra_headers=extra_headers,
+        length=len(body),
+        body=body,
+    )
 
     start_ms = time.ticks_ms()
     sock = None

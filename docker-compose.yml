@@ -14,5 +14,17 @@ services:
       GREENHOUSE_EXPORT_DIR: /app/data/exports
       GREENHOUSE_ARCHIVE_TEMP_DIR: /app/data/pending
       GREENHOUSE_TIMEZONE: America/Toronto
+      GREENHOUSE_CLIENT_DEVICE_ID: ${GREENHOUSE_CLIENT_DEVICE_ID:-greenhouse}
+      GREENHOUSE_SNAPSHOT_WINDOW_MINUTES: ${GREENHOUSE_SNAPSHOT_WINDOW_MINUTES:-5}
+      GREENHOUSE_READ_TOKEN: ${GREENHOUSE_READ_TOKEN:-}
+      GREENHOUSE_INGEST_TOKEN: ${GREENHOUSE_INGEST_TOKEN:-}
     volumes:
       - ./data:/app/data
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: greenhouse-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - greenhouse-server

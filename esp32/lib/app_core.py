@@ -86,6 +86,13 @@ def _server_url():
     return config.SERVER_URL
 
 
+def _upload_token():
+    token = getattr(config, "SERVER_UPLOAD_TOKEN", None)
+    if token and str(token).strip():
+        return str(token).strip()
+    return None
+
+
 def _upload_preflight_error():
     if not _uploads_enabled():
         return None
@@ -129,7 +136,11 @@ def run_device():
             config.WIFI_PASSWORD,
             timeout_s=config.WIFI_TIMEOUT_SECONDS,
         )
-        uploader = Uploader(_server_url(), timeout_s=config.HTTP_TIMEOUT_SECONDS)
+        uploader = Uploader(
+            _server_url(),
+            timeout_s=config.HTTP_TIMEOUT_SECONDS,
+            upload_token=_upload_token(),
+        )
     elif upload_error:
         print("Uploads disabled: %s" % upload_error)
     sensors = SensorSuite(config)

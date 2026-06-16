@@ -176,6 +176,33 @@ class AppCoreConfigTestCase(unittest.TestCase):
 
         self.assertEqual(pending, [{"sequence": 2}, {"sequence": 3}])
 
+    def test_upload_token_is_trimmed_and_optional(self) -> None:
+        module = self._load_module(
+            {
+                "RUN_MODE": "summer",
+                "UPLOAD_ENABLED": True,
+                "SERVER_URL": "http://192.168.1.50:8000/api/v1/readings",
+                "SERVER_UPLOAD_TOKEN": "  ingest-secret  ",
+                "WIFI_SSID": "lab-wifi",
+                "WIFI_PASSWORD": "secret",
+            }
+        )
+
+        self.assertEqual(module._upload_token(), "ingest-secret")
+
+        blank_module = self._load_module(
+            {
+                "RUN_MODE": "summer",
+                "UPLOAD_ENABLED": True,
+                "SERVER_URL": "http://192.168.1.50:8000/api/v1/readings",
+                "SERVER_UPLOAD_TOKEN": "   ",
+                "WIFI_SSID": "lab-wifi",
+                "WIFI_PASSWORD": "secret",
+            }
+        )
+
+        self.assertIsNone(blank_module._upload_token())
+
     def test_flush_pending_uploads_stops_after_first_failure(self) -> None:
         module = self._load_module(
             {

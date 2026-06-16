@@ -18,6 +18,10 @@ class Settings:
     timezone: str
     stale_minutes: int
     ui_history_limit: int
+    client_device_id: str
+    snapshot_window_minutes: int
+    read_token: str | None
+    ingest_token: str | None
     archive_filename_prefix: str
     archive_temp_dir: Path
     keep_local_archive_copy: bool
@@ -32,6 +36,13 @@ def _optional_path(value: str | None) -> Path | None:
     if not value:
         return None
     return Path(value).expanduser()
+
+
+def _optional_secret(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    return cleaned or None
 
 
 def load_settings() -> Settings:
@@ -51,6 +62,11 @@ def load_settings() -> Settings:
         timezone=os.getenv("GREENHOUSE_TIMEZONE", "America/Toronto"),
         stale_minutes=int(os.getenv("GREENHOUSE_STALE_MINUTES", "3")),
         ui_history_limit=int(os.getenv("GREENHOUSE_UI_HISTORY_LIMIT", "10")),
+        client_device_id=os.getenv("GREENHOUSE_CLIENT_DEVICE_ID", "greenhouse").strip()
+        or "greenhouse",
+        snapshot_window_minutes=int(os.getenv("GREENHOUSE_SNAPSHOT_WINDOW_MINUTES", "5")),
+        read_token=_optional_secret(os.getenv("GREENHOUSE_READ_TOKEN")),
+        ingest_token=_optional_secret(os.getenv("GREENHOUSE_INGEST_TOKEN")),
         archive_filename_prefix=os.getenv("GREENHOUSE_ARCHIVE_PREFIX", "greenhouse-weekly"),
         archive_temp_dir=archive_temp_dir,
         keep_local_archive_copy=os.getenv("GREENHOUSE_KEEP_LOCAL_ARCHIVE_COPY", "0") == "1",

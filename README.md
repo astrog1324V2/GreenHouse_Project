@@ -6,6 +6,7 @@ Local greenhouse monitoring stack for ESP32 sensor nodes:
 - `outdoor`: DHT22 + BH1750
 - `esp32_c3_gift_display`: ESP32-C3 Super Mini + DHT22 + BH1750 + SH1106 OLED, display-only with no uploads
 - `server`: Flask + SQLite backend hosted on an always-on Windows PC
+- `ios/GreenhouseMonitor`: native iPhone/iPad app that reads the public API through Cloudflare Tunnel
 
 ## Project layout
 
@@ -20,11 +21,13 @@ Local greenhouse monitoring stack for ESP32 sensor nodes:
 
 1. Start Docker Desktop on the Windows PC.
 2. Run `docker compose up -d --build`.
-3. Set `SERVER_URL = "http://<your-pc-ip>:8000/api/v1/readings"` in each ESP32 config.
-4. Leave `TEMP_WINDOWS_SERVER_URL = None` unless `component_test` should post somewhere different.
-5. Open `http://<your-pc-ip>:8000/` to view the live dashboard.
+3. Copy `.env.example` to `.env` and fill in the Cloudflare tunnel, app read, and ESP32 ingest tokens.
+4. Set `SERVER_URL = "http://<your-pc-ip>:8000/api/v1/readings"` in each ESP32 config.
+5. Set `SERVER_UPLOAD_TOKEN` in each uploading ESP32 config to match `GREENHOUSE_INGEST_TOKEN`.
+6. Leave `TEMP_WINDOWS_SERVER_URL = None` unless `component_test` should post somewhere different.
+7. Use the iPhone/iPad app with `https://<your-cloudflare-hostname>/api/v1/app/latest`.
 
-The dashboard now updates itself as soon as new readings arrive, and each ESP32 keeps a short backlog in memory so it can flush readings once the Windows PC finishes booting after a power outage.
+The local dashboard still exists for troubleshooting, and each ESP32 keeps a short backlog in memory so it can flush readings once the Windows PC finishes booting after a power outage. The native app uses the compact `/api/v1/app/latest` endpoint instead of the web page.
 
 `SERVER_URL` is the normal destination. `TEMP_WINDOWS_SERVER_URL` is only an optional override used by `component_test` mode, and it now falls back to `SERVER_URL` automatically when left blank.
 

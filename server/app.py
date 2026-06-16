@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import queue
 import threading
+from hmac import compare_digest
 from datetime import datetime, timezone
 from io import BytesIO
 from typing import Any
@@ -40,11 +41,20 @@ OPTIONAL_NUMERIC_FIELDS = {
 }
 OPTIONAL_TEXT_FIELDS = {"sent_at_utc": str}
 VALID_MODES = {"summer", "range_test", "component_test", "display_only"}
-CLIENT_DEVICE_ID = "greenhouse"
 CLIENT_TEMPERATURE_HOURS = (
-    {"label": "3 PM", "hour": 15},
     {"label": "3 AM", "hour": 3},
+    {"label": "3 PM", "hour": 15},
 )
+READ_PROTECTED_ENDPOINTS = {
+    "latest",
+    "app_latest",
+    "stream",
+    "index",
+    "dev",
+    "export_csv",
+    "archive_now",
+    "delete_device",
+}
 
 
 class DashboardEventStream:
@@ -110,12 +120,20 @@ def create_app(settings: Settings | None = None) -> Flask:
     current_settings.ensure_directories()
     initialize_database(current_settings.db_path)
 
+    @app.before_request
+    def require_configured_tokens() -> Response | None:
+        endpoint = request.endpoint
+        if endpoint == "readings":
+            return _require_bearer_token(current_settings.ingest_token, "ingest")
+        if endpoint in READ_PROTECTED_ENDPOINTS:
+            return _require_bearer_token(current_settings.read_token, "read")
+        return None
+
     @app.get("/health")
     def health() -> Response:
         return jsonify(
             {
                 "status": "ok",
-                "db_path": str(current_settings.db_path),
                 "timestamp_utc": _utc_now_iso(),
             }
         )
@@ -123,6 +141,10 @@ def create_app(settings: Settings | None = None) -> Flask:
     @app.get("/api/v1/latest")
     def latest() -> Response:
         return jsonify(_build_dashboard_payload(current_settings))
+
+    @app.get("/api/v1/app/latest")
+    def app_latest() -> Response:
+        return jsonify(_build_app_payload(current_settings, current_settings.client_device_id))
 
     @app.get("/api/v1/stream")
     def stream() -> Response:
@@ -184,7 +206,7 @@ def create_app(settings: Settings | None = None) -> Flask:
 
     @app.get("/")
     def index() -> str:
-        dashboard = _build_client_payload(current_settings, CLIENT_DEVICE_ID)
+        dashboard = _build_client_payload(current_settings, current_settings.client_device_id)
         return render_template(
             "index.html",
             generated_at_local=dashboard["generated_at_local"],
@@ -210,6 +232,19 @@ def create_app(settings: Settings | None = None) -> Flask:
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _require_bearer_token(expected_token: str | None, token_name: str) -> Response | None:
+    if expected_token is None:
+        return None
+
+    auth_header = request.headers.get("Authorization", "")
+    scheme, _, supplied_token = auth_header.partition(" ")
+    if scheme.lower() != "bearer" or not supplied_token:
+        return jsonify({"error": f"Missing {token_name} bearer token."}), 401
+    if not compare_digest(supplied_token.strip(), expected_token):
+        return jsonify({"error": f"Invalid {token_name} bearer token."}), 401
+    return None
 
 
 def _validate_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -319,22 +354,75 @@ def _build_client_payload(settings: Settings, device_id: str) -> dict[str, Any]:
     }
 
 
+def _build_app_payload(settings: Settings, device_id: str) -> dict[str, Any]:
+    generated_at_utc = _utc_now_iso()
+    devices = _build_status_payload(settings)
+    device = devices.get(device_id)
+
+    return {
+        "generated_at_utc": generated_at_utc,
+        "generated_at_local": _format_local(generated_at_utc, settings.timezone),
+        "timezone": settings.timezone,
+        "device_id": device_id,
+        "current": _compact_reading(device, settings) if device else None,
+        "temperature_snapshots": [
+            {
+                "label": snapshot["label"],
+                "hour": snapshot["hour"],
+                "target_local_time": "%02d:00" % snapshot["hour"],
+                "window_minutes": settings.snapshot_window_minutes,
+                "reading": _compact_reading(snapshot["reading"], settings)
+                if snapshot["reading"]
+                else None,
+            }
+            for snapshot in _build_temperature_snapshots(settings, device_id)
+        ],
+    }
+
+
 def _build_temperature_snapshots(
     settings: Settings,
     device_id: str,
 ) -> list[dict[str, Any]]:
-    target_hours = {item["hour"] for item in CLIENT_TEMPERATURE_HOURS}
     readings_by_hour: dict[int, dict[str, Any]] = {}
+    timezone = ZoneInfo(settings.timezone)
+    window_seconds = settings.snapshot_window_minutes * 60
 
     for row in fetch_temperature_readings(settings.db_path, device_id=device_id):
-        local_hour = _local_hour(row["received_at_utc"], settings.timezone)
-        if local_hour not in target_hours or local_hour in readings_by_hour:
+        measurement_at_utc = _measurement_timestamp(row)
+        if not measurement_at_utc:
             continue
-        row["received_at_local"] = _format_local(row["received_at_utc"], settings.timezone)
-        row["sent_at_local"] = _format_local(row["sent_at_utc"], settings.timezone)
-        readings_by_hour[local_hour] = row
-        if len(readings_by_hour) == len(target_hours):
-            break
+        measurement_at_local = datetime.fromisoformat(measurement_at_utc).astimezone(timezone)
+
+        for item in CLIENT_TEMPERATURE_HOURS:
+            target_hour = item["hour"]
+            target_local = measurement_at_local.replace(
+                hour=target_hour,
+                minute=0,
+                second=0,
+                microsecond=0,
+            )
+            distance_seconds = abs((measurement_at_local - target_local).total_seconds())
+            if distance_seconds > window_seconds:
+                continue
+
+            candidate = dict(row)
+            candidate["measurement_at_utc"] = measurement_at_utc
+            candidate["measurement_at_local"] = _format_local(measurement_at_utc, settings.timezone)
+            candidate["received_at_local"] = _format_local(
+                candidate["received_at_utc"],
+                settings.timezone,
+            )
+            candidate["sent_at_local"] = _format_local(
+                candidate["sent_at_utc"],
+                settings.timezone,
+            )
+            candidate["_snapshot_target_local"] = target_local
+            candidate["_snapshot_distance_seconds"] = distance_seconds
+
+            previous = readings_by_hour.get(target_hour)
+            if previous is None or _snapshot_is_newer(candidate, previous):
+                readings_by_hour[target_hour] = candidate
 
     return [
         {
@@ -346,11 +434,31 @@ def _build_temperature_snapshots(
     ]
 
 
-def _local_hour(timestamp_utc: str | None, timezone_name: str) -> int | None:
-    if not timestamp_utc:
-        return None
-    parsed = datetime.fromisoformat(timestamp_utc)
-    return parsed.astimezone(ZoneInfo(timezone_name)).hour
+def _snapshot_is_newer(candidate: dict[str, Any], previous: dict[str, Any]) -> bool:
+    candidate_target = candidate["_snapshot_target_local"]
+    previous_target = previous["_snapshot_target_local"]
+    if candidate_target != previous_target:
+        return candidate_target > previous_target
+    return candidate["_snapshot_distance_seconds"] < previous["_snapshot_distance_seconds"]
+
+
+def _compact_reading(row: dict[str, Any], settings: Settings) -> dict[str, Any]:
+    measurement_at_utc = _measurement_timestamp(row)
+    return {
+        "temperature_c": row.get("temperature_c"),
+        "humidity_pct": row.get("humidity_pct"),
+        "light_lux": row.get("light_lux"),
+        "measurement_at_utc": measurement_at_utc,
+        "measurement_at_local": _format_local(measurement_at_utc, settings.timezone),
+        "received_at_utc": row.get("received_at_utc"),
+        "received_at_local": _format_local(row.get("received_at_utc"), settings.timezone),
+        "age_seconds": _age_seconds(row.get("received_at_utc")),
+        "is_stale": _age_seconds(row.get("received_at_utc")) > settings.stale_minutes * 60,
+    }
+
+
+def _measurement_timestamp(row: dict[str, Any]) -> str | None:
+    return row.get("sent_at_utc") or row.get("received_at_utc")
 
 
 def _format_local(timestamp_utc: str | None, timezone_name: str) -> str | None:

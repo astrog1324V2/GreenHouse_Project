@@ -32,6 +32,10 @@ class AppTestCase(unittest.TestCase):
             "GREENHOUSE_ARCHIVE_TEMP_DIR",
             "GREENHOUSE_ARCHIVE_SHARE_DIR",
             "GREENHOUSE_TIMEZONE",
+            "GREENHOUSE_CLIENT_DEVICE_ID",
+            "GREENHOUSE_SNAPSHOT_WINDOW_MINUTES",
+            "GREENHOUSE_READ_TOKEN",
+            "GREENHOUSE_INGEST_TOKEN",
         ):
             os.environ.pop(key, None)
 
@@ -56,6 +60,95 @@ class AppTestCase(unittest.TestCase):
         self.assertIn("history", latest)
         self.assertIn("greenhouse", latest["history"])
         self.assertNotIn("deltas", latest)
+
+    def test_app_latest_returns_compact_greenhouse_payload(self) -> None:
+        readings = (
+            (1, 12.0, "2026-06-04T06:59:00+00:00"),
+            (2, 14.0, "2026-06-04T07:04:00+00:00"),
+            (3, 31.0, "2026-06-03T19:01:00+00:00"),
+            (4, 30.0, "2026-06-02T19:00:00+00:00"),
+            (5, 99.0, "2026-06-04T07:08:00+00:00"),
+        )
+        for sequence, temperature, sent_at_utc in readings:
+            self.client.post(
+                "/api/v1/readings",
+                json={
+                    "device_id": "greenhouse",
+                    "mode": "summer",
+                    "sequence": sequence,
+                    "wifi_rssi_dbm": -62,
+                    "temperature_c": temperature,
+                    "humidity_pct": 66.1,
+                    "light_lux": 348.0,
+                    "sent_at_utc": sent_at_utc,
+                },
+            )
+
+        self.client.post(
+            "/api/v1/readings",
+            json={
+                "device_id": "greenhouse",
+                "mode": "summer",
+                "sequence": 99,
+                "wifi_rssi_dbm": -62,
+                "temperature_c": 24.5,
+                "humidity_pct": 66.1,
+                "light_lux": 348.0,
+            },
+        )
+
+        response = self.client.get("/api/v1/app/latest")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["device_id"], "greenhouse")
+        self.assertEqual(payload["current"]["temperature_c"], 24.5)
+        self.assertNotIn("devices", payload)
+        self.assertNotIn("history", payload)
+
+        snapshots = {
+            snapshot["label"]: snapshot["reading"]
+            for snapshot in payload["temperature_snapshots"]
+        }
+        self.assertEqual(snapshots["3 AM"]["temperature_c"], 12.0)
+        self.assertEqual(snapshots["3 PM"]["temperature_c"], 31.0)
+
+    def test_app_latest_requires_read_token_when_configured(self) -> None:
+        os.environ["GREENHOUSE_READ_TOKEN"] = "read-secret"
+        app = create_app(load_settings())
+        client = app.test_client()
+
+        response = client.get("/api/v1/app/latest")
+        self.assertEqual(response.status_code, 401)
+
+        authed_response = client.get(
+            "/api/v1/app/latest",
+            headers={"Authorization": "Bearer read-secret"},
+        )
+        self.assertEqual(authed_response.status_code, 200)
+
+    def test_readings_requires_ingest_token_when_configured(self) -> None:
+        os.environ["GREENHOUSE_INGEST_TOKEN"] = "ingest-secret"
+        app = create_app(load_settings())
+        client = app.test_client()
+        payload = {
+            "device_id": "greenhouse",
+            "mode": "summer",
+            "sequence": 10,
+            "wifi_rssi_dbm": -62,
+            "temperature_c": 24.5,
+            "humidity_pct": 66.1,
+            "light_lux": 348.0,
+        }
+
+        response = client.post("/api/v1/readings", json=payload)
+        self.assertEqual(response.status_code, 401)
+
+        authed_response = client.post(
+            "/api/v1/readings",
+            json=payload,
+            headers={"Authorization": "Bearer ingest-secret"},
+        )
+        self.assertEqual(authed_response.status_code, 201)
 
     def test_stream_emits_dashboard_event(self) -> None:
         self.client.post(
@@ -143,7 +236,7 @@ class AppTestCase(unittest.TestCase):
         readings = (
             (1, 31.5, "2026-06-03T19:05:00+00:00"),
             (2, 24.0, "2026-06-02T19:05:00+00:00"),
-            (3, 19.8, "2026-06-04T07:10:00+00:00"),
+            (3, 19.8, "2026-06-04T07:02:00+00:00"),
         )
         for sequence, temperature, received_at_utc in readings:
             self.client.post(
