@@ -13,6 +13,7 @@
 		100000000000000000000104 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000004 /* ContentView.swift */; };
 		100000000000000000000105 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000005 /* SettingsView.swift */; };
 		100000000000000000000106 /* GreenhouseMonitorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000006 /* GreenhouseMonitorTests.swift */; };
+		100000000000000000000107 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000007 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -32,6 +33,7 @@
 		100000000000000000000004 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		100000000000000000000005 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		100000000000000000000006 /* GreenhouseMonitorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GreenhouseMonitorTests.swift; sourceTree = "<group>"; };
+		100000000000000000000007 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		100000000000000000000011 /* GreenhouseMonitor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GreenhouseMonitor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		100000000000000000000012 /* GreenhouseMonitorTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GreenhouseMonitorTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -71,6 +73,7 @@
 				100000000000000000000005 /* SettingsView.swift */,
 				100000000000000000000002 /* Models.swift */,
 				100000000000000000000003 /* Services.swift */,
+				100000000000000000000007 /* Assets.xcassets */,
 			);
 			path = GreenhouseMonitor;
 			sourceTree = "<group>";
@@ -173,6 +176,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				100000000000000000000107 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -273,12 +277,14 @@
 		100000000000000000000611 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				ENABLE_TESTABILITY = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_CFBundleDisplayName = "Greenhouse Monitor";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -305,10 +311,12 @@
 		100000000000000000000612 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_CFBundleDisplayName = "Greenhouse Monitor";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
